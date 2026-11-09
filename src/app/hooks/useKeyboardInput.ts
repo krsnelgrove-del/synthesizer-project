@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { Notes } from "@/app/(const)/noteMap";
-import { audioEngine } from "@/app/classes/audioEngine";
+import { AudioEngine } from "../classes/audioEngine";
 
 const keyMap = new Map<string, number>();
 const pressedKeys = new Set<string>();
@@ -53,7 +53,7 @@ export function useKeyboardInput() {
 
             if (frequency && !pressedKeys.has(key)) {
                 pressedKeys.add(key);
-                audioEngine.play(frequency);
+                AudioEngine.getInstance()?.play(frequency);
                 notifyListeners();
             }
         };
@@ -64,7 +64,7 @@ export function useKeyboardInput() {
 
             if (frequency && pressedKeys.has(key)) {
                 pressedKeys.delete(key);
-                audioEngine.stop(frequency);
+                AudioEngine.getInstance()?.stop(frequency);
                 notifyListeners();
             }
         };

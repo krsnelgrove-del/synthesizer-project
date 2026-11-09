@@ -16,8 +16,8 @@ export const Container = ({
   
   const variantStyles = {
     default: 'text-synth-text inset-0',
-    panel: 'synth-panel p-2',       
-    card: 'synth-card p-2',        
+    panel: 'bg-synth-panel p-2',       
+    card: 'bg-synth-card p-2',        
     flex: 'flex items-center gap-2',
   };
 

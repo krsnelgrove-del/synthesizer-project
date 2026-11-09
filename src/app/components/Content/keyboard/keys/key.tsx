@@ -1,5 +1,5 @@
 import { Note } from "@/app/(const)/noteMap";
-import { audioEngine } from "@/app/classes/audioEngine";
+import { AudioEngine as audioEngine } from "@/app/classes/audioEngine";
 import { useIsKeyPressed } from "@/app/hooks/useKeyboardInput";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
@@ -54,13 +54,13 @@ export default function Key({
         <button
             type="button"
             onPointerDown={() => {
-                audioEngine.play(note.frequency);
+                audioEngine.getInstance()?.play(note.frequency);
                 onPointerDown?.();
             }}
-            onPointerUp={() => audioEngine.stop(note.frequency)}
-            onPointerLeave={() => audioEngine.stop(note.frequency)}
+            onPointerUp={() => audioEngine.getInstance()?.stop(note.frequency)}
+            onPointerLeave={() => audioEngine.getInstance()?.stop(note.frequency)}
             onPointerEnter={onPointerEnter}
-            className={cn("h-full w-full select-none touch-none", getKeyStyles(), className)}
+            className={cn("h-full w-full select-none touch-none outline-none", getKeyStyles(), className)}
             {...props}
         >
             <span>{showName ? `${note.name}` : ""}</span>
