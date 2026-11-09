@@ -1,7 +1,7 @@
 import { MenuSquare } from "lucide-react";
 import Image from "next/image";
 import { Container } from "@/lib/container";
-import { AudioEngine } from "@/app/classes/audioEngine";
+import { AudioEngine, ADSRTypes } from "@/app/classes/audioEngine";
 import { useState } from "react";
 
 const waveformIcons: Record<OscillatorType, string> = {
@@ -12,18 +12,42 @@ const waveformIcons: Record<OscillatorType, string> = {
   custom: "sine.svg",
 };
 
-const adsrIcons: Record<string, { value: number, icon: string }> = {
-    
-}
-
 export default function SynthPanel() {
+  const engine = AudioEngine.getInstance();
   const oscillatorTypes: OscillatorType[] = ["sine", "sawtooth", "triangle", "square"];
-  const [currentOscillatorType, setCurrentOscillatorType] = useState(oscillatorTypes[0]);
+  
+  const [currentOscillatorType, setCurrentOscillatorType] = useState<OscillatorType>(
+    engine?.getCurrentOscillatorWaveform() ?? "sine"
+  );
+
+  const [attack, setAttack] = useState(engine?.getADSRSetting(ADSRTypes.attack) ?? 0.01);
+  const [decay, setDecay] = useState(engine?.getADSRSetting(ADSRTypes.decay) ?? 0.05);
+  const [sustain, setSustain] = useState(engine?.getADSRSetting(ADSRTypes.sustain) ?? 0.3);
+  const [release, setRelease] = useState(engine?.getADSRSetting(ADSRTypes.release) ?? 1);
 
   const handleOscillatorTypeClick = (oscillatorType: OscillatorType) => {
     AudioEngine.getInstance()?.setOscillatorWaveform(oscillatorType);
     setCurrentOscillatorType(oscillatorType);
     console.log("Oscillator type switched to: ", oscillatorType);
+  };
+
+  const handleAdsrChange = (type: ADSRTypes, value: number) => {
+    AudioEngine.getInstance()?.SetADSRSettings(type, value);
+
+    switch (type) {
+      case ADSRTypes.attack:
+        setAttack(value);
+        break;
+      case ADSRTypes.decay:
+        setDecay(value);
+        break;
+      case ADSRTypes.sustain:
+        setSustain(value);
+        break;
+      case ADSRTypes.release:
+        setRelease(value);
+        break;
+    }
   };
 
   return (
@@ -33,14 +57,13 @@ export default function SynthPanel() {
         <MenuSquare className="opacity-50 hover:opacity-65 hover:scale-105 active:scale-95 transition duration-50 ease-in-out" />
       </div>
 
-    {/* Oscillator Waveforms */}
+      {/* Oscillator */}
       <Container as="div" variant="panel">
         <div className="flex flex-row justify-between pb-2">
           <span>Oscillator</span>
         </div>
         <div className="flex flex-col w-full h-auto p-2">
-            {/* Wow you finally mapped it! Totally not lazy */}
-          <div className="flex flex-row w-full justifications-between gap-0 font-geist-sans">
+          <div className="flex flex-row w-full justify-between gap-0 font-geist-sans">
             {oscillatorTypes.map((type, index) => {
               const isSelected = type === currentOscillatorType;
               const isFirst = index === 0;
@@ -89,19 +112,87 @@ export default function SynthPanel() {
             })}
           </div>
         </div>
-        
-            {/* ADSR */}
-        <Container as="div" variant="panel">
-            <div className="flex flex-row justify-between pb-2">
-                <span>Envelope</span>
-                <div className="flex flex-1 flex-col gap-0">
-
-                </div>
-            </div>
-        </Container>
-        
-        <div></div>
       </Container>
+
+      {/* ADSR Envelope */}
+      <Container as="div" variant="panel">
+        <div className="flex flex-row justify-between pb-2">
+          <span>ADSREnvelope</span>
+        </div>
+        <div className="flex flex-col w-full h-auto p-2">
+          
+          {/* Attack Control */}
+          <div className="flex flex-col gap-2 bg-synth-card border border-synth-border rounded-xl p-2">
+            <div className="flex justify-between text-xs text-slate-300">
+              <span>Attack</span>
+              <span>{attack.toFixed(2)}s</span>
+            </div>
+            <input
+              type="range"
+              min="0.001"
+              max="2.0"
+              step="0.01"
+              value={attack}
+              onChange={(e) => handleAdsrChange(ADSRTypes.attack, parseFloat(e.target.value))}
+              className="accent-slate-400 cursor-pointer w-full"
+            />
+          </div>
+
+          {/* Decay */}
+          <div className="flex flex-col gap-2 bg-synth-card border border-synth-border rounded-xl p-3">
+            <div className="flex justify-between text-xs text-slate-300">
+              <span>Decay</span>
+              <span>{decay.toFixed(2)}s</span>
+            </div>
+            <input
+              type="range"
+              min="0.001"
+              max="2.0"
+              step="0.01"
+              value={decay}
+              onChange={(e) => handleAdsrChange(ADSRTypes.decay, parseFloat(e.target.value))}
+              className="accent-slate-400 cursor-pointer w-full"
+            />
+          </div>
+
+          {/* Sustain */}
+          <div className="flex flex-col gap-1 bg-synth-card border border-synth-border rounded-xl p-3">
+            <div className="flex justify-between text-xs text-slate-300">
+              <span>Sustain</span>
+              <span>{Math.round(sustain * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0.0"
+              max="1.0"
+              step="0.01"
+              value={sustain}
+              onChange={(e) => handleAdsrChange(ADSRTypes.sustain, parseFloat(e.target.value))}
+              className="accent-slate-400 cursor-pointer w-full"
+            />
+          </div>
+
+          {/* Release */}
+          <div className="flex flex-col gap-1 bg-synth-card border border-synth-border rounded-xl p-3">
+            <div className="flex justify-between text-xs text-slate-300">
+              <span>Release</span>
+              <span>{release.toFixed(2)}s</span>
+            </div>
+            <input
+              type="range"
+              min="0.001"
+              max="5.0"
+              step="0.01"
+              value={release}
+              onChange={(e) => handleAdsrChange(ADSRTypes.release, parseFloat(e.target.value))}
+              className="accent-slate-400 cursor-pointer w-full"
+            />
+          </div>
+
+        </div>
+      </Container>
+
+      <div></div>
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { Notes, Note } from "../(const)/noteMap";
 export default function Home() {
 
   return (
-      <Container as="div" variant="default" className="flex flex-row w-full min-h-dvh gap-x-0.5">
+      <Container as="div" variant="default" className="bg-synth-app flex flex-row w-full min-h-dvh gap-x-0.5">
         {/*Sidebar*/}
         <Container as="div" className="flex inset-0 w-1/20">
           <Sidebar/>
