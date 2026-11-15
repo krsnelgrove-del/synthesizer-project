@@ -3,17 +3,17 @@ import { Sliders, Settings, Save, User } from 'lucide-react';
 
 export default function Sidebar() {
     return (
-        <aside className="w-16 h-full bg-synth-panel border-r border-synth-border flex flex-col justify-between items-center py-6 select-none">
+        <aside className="w-full h-full bg-synth-panel border-r border-synth-border flex flex-col justify-between items-center py-6 select-none">
             {/* Top Navigation / Tool Icons */}
             <div className="flex flex-col items-center gap-4">
                 <IconButton variant="default" aria-label="Oscillator View" className="w-10 h-10 rounded-xl bg-synth-card border border-synth-border flex items-center justify-center text-synth-text shadow-sm hover:border-synth-violet transition-colors">
-                    <Sliders size={20} />
+                    <Sliders size={25} />
                 </IconButton>
                 <IconButton variant="default" aria-label="Export" className="w-10 h-10 rounded-xl bg-synth-card border border-synth-border flex items-center justify-center text-synth-text shadow-sm hover:border-synth-violet transition-colors">
-                    <Save size={20} />
+                    <Save size={25} />
                 </IconButton>
                  <IconButton variant="default" aria-label="Settings" className="w-10 h-10 rounded-xl bg-synth-card border border-synth-border flex items-center justify-center text-synth-text shadow-sm hover:border-synth-violet transition-colors">
-                    <Settings size={20} />
+                    <Settings size={25} />
                 </IconButton>
             </div>
 

@@ -11,6 +11,7 @@
   "dependencies": {
     "@netlify/plugin-nextjs": "^5.16.5",
     "clsx": "^2.1.1",
+    "knobs": "^0.0.2",
     "lucide-react": "^1.67.0",
     "next": "16.4.4",
     "react": "19.3.0",

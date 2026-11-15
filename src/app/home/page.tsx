@@ -3,22 +3,22 @@
 import Content from "../components/Content/content";
 import Sidebar from "../components/sidebar/sideBar";
 import { Container } from "@/lib/container";
-import { Notes, Note } from "../(const)/noteMap";
-
 
 export default function Home() {
-
   return (
-      <Container as="div" variant="default" className="flex flex-row w-full min-h-dvh gap-x-0.5">
-        {/*Sidebar*/}
-        <Container as="div" className="flex inset-0 w-1/20">
-          <Sidebar/>
-        </Container>
+    <Container 
+      as="div" 
+      variant="default" 
+      className="bg-synth-app flex flex-row w-full h-screen overflow-hidden"
+    >
+      <Container as="div" className="flex w-[5%] h-full">
+        <Sidebar />
+      </Container>
 
-        {/*Main Content*/}
-        <Container as="div" variant="default" className="w-19/20">
-          <Content/>
-        </Container>
+      {/* Main Content */}
+      <Container as="div" variant="default" className="w-[95%] h-full overflow-y-auto">
+        <Content />
+      </Container>
     </Container>
   );
 }
