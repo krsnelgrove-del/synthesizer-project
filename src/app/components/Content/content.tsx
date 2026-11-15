@@ -15,12 +15,12 @@ export default function Content() {
             {/*Content Area*/}
             <Container as="div" variant="flex" className="flex flex-row p-2 gap-2 w-full h-7/12 min-h-0 min-w-0 overflow-hidden">
                 {/*Engine*/}
-                <Container as="div" variant="panel" className="flex justify-center p-4 w-1/4 h-full min-w-0 min-h-0 max-h-125 self-start overflow-auto">
+                <Container as="div" variant="panel" className="flex justify-center p-4 w-1/4 min-w-0 min-h-0 h-auto max-h-full self-start overflow-auto">
                     <SynthPanel/>
                 </Container>
 
                 {/*Keyroll*/}
-                <Container as="div" variant="panel" className="flex justify-center items-center w-3/4 h-full min-w-0 min-h-0 self-end verflow-auto">
+                <Container as="div" variant="panel" className="flex justify-center items-center w-3/4 h-full min-w-0 self-end verflow-auto">
                     <PianoRoll/>
                 </Container>
             </Container>

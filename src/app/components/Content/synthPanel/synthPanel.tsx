@@ -1,8 +1,11 @@
+"use client";
+
 import { MenuSquare } from "lucide-react";
 import Image from "next/image";
 import { Container } from "@/lib/container";
-import { AudioEngine, ADSRTypes } from "@/app/classes/audioEngine";
-import { useState } from "react";
+import { audioEngine, PARAMETER_LABEL, synthParameters, PARAMETER_TYPE} from "@/app/classes/audioEngine";
+import { useSyncExternalStore } from "react";
+import CustomKnob from "../../customInputs/CustomKnob";
 
 const waveformIcons: Record<OscillatorType, string> = {
   sine: "sine.svg",
@@ -12,43 +15,55 @@ const waveformIcons: Record<OscillatorType, string> = {
   custom: "sine.svg",
 };
 
+// Safe fallback snapshot for SSR hydration
+const serverSnapshot = {
+  attack: 0.01,
+  decay: 0.05,
+  sustain: 0.3,
+  release: 1.0,
+  reverbWet: 0.5,
+  delayWet: 0.4,
+  delayTime: 0.5,
+  distortWet: 1.0,
+  distortionDrive: 100.0,
+  waveform: "sine" as OscillatorType,
+};
+
+
 export default function SynthPanel() {
-  const engine = AudioEngine.getInstance();
   const oscillatorTypes: OscillatorType[] = ["sine", "sawtooth", "triangle", "square"];
   
-  const [currentOscillatorType, setCurrentOscillatorType] = useState<OscillatorType>(
-    engine?.getCurrentOscillatorWaveform() ?? "sine"
+  // Subscribe to AudioEngine state using the stable, cached getSnapshot reference
+  const state = useSyncExternalStore(
+    audioEngine.subscribe,
+    audioEngine.getSnapshot,
+    () => serverSnapshot
   );
 
-  const [attack, setAttack] = useState(engine?.getADSRSetting(ADSRTypes.attack) ?? 0.01);
-  const [decay, setDecay] = useState(engine?.getADSRSetting(ADSRTypes.decay) ?? 0.05);
-  const [sustain, setSustain] = useState(engine?.getADSRSetting(ADSRTypes.sustain) ?? 0.3);
-  const [release, setRelease] = useState(engine?.getADSRSetting(ADSRTypes.release) ?? 1);
-
   const handleOscillatorTypeClick = (oscillatorType: OscillatorType) => {
-    AudioEngine.getInstance()?.setOscillatorWaveform(oscillatorType);
-    setCurrentOscillatorType(oscillatorType);
-    console.log("Oscillator type switched to: ", oscillatorType);
+    audioEngine.setOscillatorWaveform(oscillatorType);
   };
 
-  const handleAdsrChange = (type: ADSRTypes, value: number) => {
-    AudioEngine.getInstance()?.SetADSRSettings(type, value);
+  const handleParameterChange = (target: PARAMETER_LABEL, value: number) => {
+    audioEngine.setSynthParameter(target, value);
+  };
 
+
+const getSnapshotValue = (type: PARAMETER_LABEL): number => {
     switch (type) {
-      case ADSRTypes.attack:
-        setAttack(value);
-        break;
-      case ADSRTypes.decay:
-        setDecay(value);
-        break;
-      case ADSRTypes.sustain:
-        setSustain(value);
-        break;
-      case ADSRTypes.release:
-        setRelease(value);
-        break;
+      case PARAMETER_LABEL.Attack: return state.attack;
+      case PARAMETER_LABEL.Decay: return state.decay;
+      case PARAMETER_LABEL.Sustain: return state.sustain;
+      case PARAMETER_LABEL.Release: return state.release;
+      case PARAMETER_LABEL.ReverbWet: return state.reverbWet;
+      case PARAMETER_LABEL.DelayWet: return state.delayWet;
+      case PARAMETER_LABEL.DelayTime: return state.delayTime;
+      case PARAMETER_LABEL.DistortionWet: return state.distortWet;
+      case PARAMETER_LABEL.DistortionDrive: return state.distortionDrive;
+      default: return 0;
     }
   };
+
 
   return (
     <div className="flex flex-col w-full h-full p-0 pt-2 pb-2 gap-2">
@@ -65,7 +80,7 @@ export default function SynthPanel() {
         <div className="flex flex-col w-full h-auto p-2">
           <div className="flex flex-row w-full justify-between gap-0 font-geist-sans">
             {oscillatorTypes.map((type, index) => {
-              const isSelected = type === currentOscillatorType;
+              const isSelected = type === state.waveform;
               const isFirst = index === 0;
               const isLast = index === oscillatorTypes.length - 1;
               const imageSrc = waveformIcons[type];
@@ -114,85 +129,46 @@ export default function SynthPanel() {
         </div>
       </Container>
 
-      {/* ADSR Envelope */}
+      {/* ADSR Settings */}
       <Container as="div" variant="panel">
         <div className="flex flex-row justify-between pb-2">
-          <span>ADSREnvelope</span>
+          <span>ADSR Envelope</span>
         </div>
-        <div className="flex flex-col w-full h-auto p-2">
-          
-          {/* Attack Control */}
-          <div className="flex flex-col gap-2 bg-synth-card border border-synth-border rounded-xl p-2">
-            <div className="flex justify-between text-xs text-slate-300">
-              <span>Attack</span>
-              <span>{attack.toFixed(2)}s</span>
-            </div>
-            <input
-              type="range"
-              min="0.001"
-              max="2.0"
-              step="0.01"
-              value={attack}
-              onChange={(e) => handleAdsrChange(ADSRTypes.attack, parseFloat(e.target.value))}
-              className="accent-slate-400 cursor-pointer w-full"
-            />
-          </div>
+        <div className="flex flex-col w-full h-auto p-2 gap-2">
 
-          {/* Decay */}
-          <div className="flex flex-col gap-2 bg-synth-card border border-synth-border rounded-xl p-3">
-            <div className="flex justify-between text-xs text-slate-300">
-              <span>Decay</span>
-              <span>{decay.toFixed(2)}s</span>
-            </div>
-            <input
-              type="range"
-              min="0.001"
-              max="2.0"
-              step="0.01"
-              value={decay}
-              onChange={(e) => handleAdsrChange(ADSRTypes.decay, parseFloat(e.target.value))}
-              className="accent-slate-400 cursor-pointer w-full"
-            />
-          </div>
-
-          {/* Sustain */}
-          <div className="flex flex-col gap-1 bg-synth-card border border-synth-border rounded-xl p-3">
-            <div className="flex justify-between text-xs text-slate-300">
-              <span>Sustain</span>
-              <span>{Math.round(sustain * 100)}%</span>
-            </div>
-            <input
-              type="range"
-              min="0.0"
-              max="1.0"
-              step="0.01"
-              value={sustain}
-              onChange={(e) => handleAdsrChange(ADSRTypes.sustain, parseFloat(e.target.value))}
-              className="accent-slate-400 cursor-pointer w-full"
-            />
-          </div>
-
-          {/* Release */}
-          <div className="flex flex-col gap-1 bg-synth-card border border-synth-border rounded-xl p-3">
-            <div className="flex justify-between text-xs text-slate-300">
-              <span>Release</span>
-              <span>{release.toFixed(2)}s</span>
-            </div>
-            <input
-              type="range"
-              min="0.001"
-              max="5.0"
-              step="0.01"
-              value={release}
-              onChange={(e) => handleAdsrChange(ADSRTypes.release, parseFloat(e.target.value))}
-              className="accent-slate-400 cursor-pointer w-full"
-            />
-          </div>
-
+          {synthParameters.filter(item =>  item.parameterTarget.typeOfParameter === PARAMETER_TYPE.ADSR).map((item) => {
+              return (
+              <div key={item.parameterName} className="flex flex-col gap-2 bg-synth-card border border-synth-border rounded-xl p-2">
+                {/*Need to adjust for edge cases*/}
+                <CustomKnob title={item.parameterName} value={getSnapshotValue(item.parameterTarget.target)} parameterTarget={item} min={item.minValue} max={item.maxValue} step={item.step} onChange={((target, val) => handleParameterChange(target.parameterTarget.target, val))}/>
+              </div>
+              )
+            }
+        )
+      }
         </div>
       </Container>
 
-      <div></div>
+      {/* Effects Settings */}
+      <Container as="div" variant="panel">
+        <div className="flex flex-row justify-between pb-2">
+          <span>Effects</span>
+        </div>
+        <div className="flex flex-col w-full h-auto p-2 gap-2">
+
+          {synthParameters.filter(item =>  item.parameterTarget.typeOfParameter === PARAMETER_TYPE.Effect).map((item) => {
+              return (
+              <div key={item.parameterName} className="flex flex-col gap-2 bg-synth-card border border-synth-border rounded-xl p-2">
+                {/*Need to adjust for edge cases*/}
+                <CustomKnob title={item.parameterName} value={getSnapshotValue(item.parameterTarget.target)} parameterTarget={item} min={item.minValue} max={item.maxValue} step={item.step} onChange={((target, val) => handleParameterChange(target.parameterTarget.target, val))}/>
+              </div>
+              )
+            }
+        )
+      }
+        </div>
+      </Container>
+
     </div>
   );
 }
