@@ -3,8 +3,16 @@ import ContentHeader from "./header/contentHeader";
 import Keyboard from "./keyboard/keyboard";
 import PianoRoll from "./pianoRoll/pianoRoll";
 import SynthPanel from "./synthPanel/synthPanel";
+import { useKeyboardInput } from "@/app/hooks/useKeyboardInput";
 
-export default function Content() {
+interface SynthContentProps {
+    synthID: string;
+}
+
+
+export default function Content({synthID}: SynthContentProps) {
+    useKeyboardInput();
+
     return (
         <Container as="div" variant="default" className="flex flex-col justify-between shrink-0 text-[1cqw] w-full h-full p-2 min-h-0">
             {/*Header*/}
@@ -16,7 +24,7 @@ export default function Content() {
             <Container as="div" variant="flex" className="flex flex-row p-2 gap-2 w-full h-7/12 min-h-0 min-w-0 overflow-hidden">
                 {/*Engine*/}
                 <Container as="div" variant="panel" className="flex justify-center p-4 w-1/4 min-w-0 min-h-0 h-auto max-h-full self-start overflow-auto">
-                    <SynthPanel/>
+                    <SynthPanel synthID={synthID}/>
                 </Container>
 
                 {/*Keyroll*/}
@@ -28,7 +36,7 @@ export default function Content() {
             {/* Keyboard Area */}
             <Container as="div" variant="flex" className="flex flex-row p-2 gap-2 w-full h-full min-h-0 max-h-7/24 overflow-hidden">
                 <Container as="div" variant="panel" className="flex justify-center items-center w-full h-full min-w-0 min-h-0 overflow-auto">
-                    <Keyboard/>
+                    <Keyboard synthID={synthID}/>
                 </Container>
             </Container>
         </Container>

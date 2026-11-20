@@ -1,11 +1,15 @@
+//will eventually refactor and seperate large rendering code into sub-components for reusability.
+
 "use client";
 
-import { MenuSquare } from "lucide-react";
 import Image from "next/image";
 import { Container } from "@/lib/container";
-import { audioEngine, PARAMETER_LABEL, synthParameters, PARAMETER_TYPE} from "@/app/classes/audioEngine";
+import { synthParameters } from "@/app/classes/audioEngine";
+import { PARAMETER_TYPE, PARAMETER_LABEL } from "@/(utils)/synthParameterUtils";
 import { useSyncExternalStore } from "react";
 import CustomKnob from "../../customInputs/CustomKnob";
+import CardTitleBar from "../../textFields/cardTitleBar";
+import { useSynthStore } from "@/(utils)/synthStore";
 
 const waveformIcons: Record<OscillatorType, string> = {
   sine: "sine.svg",
@@ -29,27 +33,29 @@ const serverSnapshot = {
   waveform: "sine" as OscillatorType,
 };
 
+interface SynthProps {
+  synthID: string;
+}
 
-export default function SynthPanel() {
+export default function SynthPanel({ synthID }: SynthProps) {
+  const synth = useSynthStore((state) => state.getSynthById(synthID));
   const oscillatorTypes: OscillatorType[] = ["sine", "sawtooth", "triangle", "square"];
   
-  // Subscribe to AudioEngine state using the stable, cached getSnapshot reference
   const state = useSyncExternalStore(
-    audioEngine.subscribe,
-    audioEngine.getSnapshot,
+    synth?.subscribe ?? (() => () => {}),
+    synth?.getSnapshot ?? (() => serverSnapshot),
     () => serverSnapshot
   );
 
   const handleOscillatorTypeClick = (oscillatorType: OscillatorType) => {
-    audioEngine.setOscillatorWaveform(oscillatorType);
+    synth?.setOscillatorWaveform(oscillatorType);
   };
 
   const handleParameterChange = (target: PARAMETER_LABEL, value: number) => {
-    audioEngine.setSynthParameter(target, value);
+    synth?.setSynthParameter(target, value);
   };
 
-
-const getSnapshotValue = (type: PARAMETER_LABEL): number => {
+  const getSnapshotValue = (type: PARAMETER_LABEL): number => {
     switch (type) {
       case PARAMETER_LABEL.Attack: return state.attack;
       case PARAMETER_LABEL.Decay: return state.decay;
@@ -64,13 +70,9 @@ const getSnapshotValue = (type: PARAMETER_LABEL): number => {
     }
   };
 
-
   return (
-    <div className="flex flex-col w-full h-full p-0 pt-2 pb-2 gap-2">
-      <div className="flex flex-row w-full justify-between">
-        <span className="font-sans font-bold text-[1.25vw]">PLUG-IN: SYNTHESIZE!</span>
-        <MenuSquare className="opacity-50 hover:opacity-65 hover:scale-105 active:scale-95 transition duration-50 ease-in-out" />
-      </div>
+    <div className="flex flex-col w-full h-full p-0 pb-2 gap-2">
+      <CardTitleBar title={`SYNTH: ${synthID.toUpperCase()}`} textColor="synth-text" />
 
       {/* Oscillator */}
       <Container as="div" variant="panel">
@@ -135,17 +137,21 @@ const getSnapshotValue = (type: PARAMETER_LABEL): number => {
           <span>ADSR Envelope</span>
         </div>
         <div className="flex flex-col w-full h-auto p-2 gap-2">
-
-          {synthParameters.filter(item =>  item.parameterTarget.typeOfParameter === PARAMETER_TYPE.ADSR).map((item) => {
-              return (
+          {synthParameters.filter(item => item.parameterTarget.typeOfParameter === PARAMETER_TYPE.ADSR).map((item) => {
+            return (
               <div key={item.parameterName} className="flex flex-col gap-2 bg-synth-card border border-synth-border rounded-xl p-2">
-                {/*Need to adjust for edge cases*/}
-                <CustomKnob title={item.parameterName} value={getSnapshotValue(item.parameterTarget.target)} parameterTarget={item} min={item.minValue} max={item.maxValue} step={item.step} onChange={((target, val) => handleParameterChange(target.parameterTarget.target, val))}/>
+                <CustomKnob 
+                  title={item.parameterName} 
+                  value={getSnapshotValue(item.parameterTarget.target)} 
+                  parameterTarget={item} 
+                  min={item.minValue} 
+                  max={item.maxValue} 
+                  step={item.step} 
+                  onChange={(target, val) => handleParameterChange(target.parameterTarget.target, val)}
+                />
               </div>
-              )
-            }
-        )
-      }
+            );
+          })}
         </div>
       </Container>
 
@@ -155,20 +161,23 @@ const getSnapshotValue = (type: PARAMETER_LABEL): number => {
           <span>Effects</span>
         </div>
         <div className="flex flex-col w-full h-auto p-2 gap-2">
-
-          {synthParameters.filter(item =>  item.parameterTarget.typeOfParameter === PARAMETER_TYPE.Effect).map((item) => {
-              return (
+          {synthParameters.filter(item => item.parameterTarget.typeOfParameter === PARAMETER_TYPE.Effect).map((item) => {
+            return (
               <div key={item.parameterName} className="flex flex-col gap-2 bg-synth-card border border-synth-border rounded-xl p-2">
-                {/*Need to adjust for edge cases*/}
-                <CustomKnob title={item.parameterName} value={getSnapshotValue(item.parameterTarget.target)} parameterTarget={item} min={item.minValue} max={item.maxValue} step={item.step} onChange={((target, val) => handleParameterChange(target.parameterTarget.target, val))}/>
+                <CustomKnob 
+                  title={item.parameterName} 
+                  value={getSnapshotValue(item.parameterTarget.target)} 
+                  parameterTarget={item} 
+                  min={item.minValue} 
+                  max={item.maxValue} 
+                  step={item.step} 
+                  onChange={(target, val) => handleParameterChange(target.parameterTarget.target, val)}
+                />
               </div>
-              )
-            }
-        )
-      }
+            );
+          })}
         </div>
       </Container>
-
     </div>
   );
 }

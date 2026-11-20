@@ -1,6 +1,8 @@
+//hook to allow use of keyboard subscription
+
 import { useEffect, useSyncExternalStore } from "react";
 import { Notes } from "@/app/(const)/noteMap";
-import { AudioEngine } from "../classes/audioEngine";
+
 
 const keyMap = new Map<string, number>();
 const pressedKeys = new Set<string>();
@@ -40,7 +42,7 @@ export function useKeyboardInput() {
     useEffect(() => {
         Notes.forEach((note) => {
             if (note.keyboardInput) {
-                keyMap.set(note.keyboardInput.toLowerCase(), note.frequency);
+                keyMap.set(note.keyboardInput.toLowerCase(), note.midiID);
             }
         });
 
@@ -48,12 +50,11 @@ export function useKeyboardInput() {
             if (event.repeat) return;
             if (["INPUT", "TEXTAREA"].includes((event.target as HTMLElement).tagName)) return;
 
-            const key = event.key.toLowerCase();
-            const frequency = keyMap.get(key);
+            const inputKey = event.key.toLowerCase();
+            const midiNote = keyMap.get(inputKey);
 
-            if (frequency && !pressedKeys.has(key)) {
-                pressedKeys.add(key);
-                AudioEngine.getInstance()?.play(frequency);
+            if (midiNote && !pressedKeys.has(inputKey)) {
+                pressedKeys.add(inputKey);
                 notifyListeners();
             }
         };
@@ -64,7 +65,6 @@ export function useKeyboardInput() {
 
             if (frequency && pressedKeys.has(key)) {
                 pressedKeys.delete(key);
-                AudioEngine.getInstance()?.stop(frequency);
                 notifyListeners();
             }
         };

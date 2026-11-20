@@ -1,11 +1,11 @@
-import { parameterObject } from "@/app/classes/audioEngine";
+import { ParameterObject } from "@/(utils)/synthParameterUtils";
 import { ChangeEvent, InputHTMLAttributes } from "react";
 
 interface CustomKnobProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   title?: string;
-  parameterTarget: parameterObject;
-  value?: number; // Make optional to catch undefined gracefully
-  onChange: (type: parameterObject, value: number) => void;
+  parameterTarget: ParameterObject;
+  value?: number;
+  onChange: (type: ParameterObject, value: number) => void;
 }
 
 export default function CustomKnob({ 
@@ -16,7 +16,6 @@ export default function CustomKnob({
   ...rest 
 }: CustomKnobProps) {
 
-  // Fallback to defaultValue if value is undefined
   const numericValue = typeof value === 'number' ? value : Number(parameterTarget.defaultValue);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
