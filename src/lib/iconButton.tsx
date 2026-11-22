@@ -16,16 +16,12 @@ export const IconButton = ({
 }: IconButtonProps) => {
   
   const variantStyles = {
-    /* Standard card button (e.g., panel action buttons) */
     default: 'bg-synth-card border border-synth-border text-synth-text hover:bg-synth-card-hover hover:border-synth-violet transition-all shadow-sm',
     
-    /* Selected/Active tool state with violet accent & glow */
     active: 'bg-synth-violet text-white shadow-[0_0_12px_rgba(92,91,229,0.5)] border border-transparent',
     
-    /* Transparent background for sidebars and toolbars */
     ghost: 'bg-transparent text-synth-muted hover:text-synth-text hover:bg-synth-card-hover transition-colors border border-transparent',
     
-    /* Input-style subtle background (e.g., inside compact controls) */
     subtle: 'bg-synth-input border border-synth-border text-synth-secondary hover:text-synth-text hover:border-synth-violet transition-colors',
   };
 

@@ -1,29 +1,53 @@
+import { useSynthStore } from "@/(utils)/synthStore";
 import { Note } from "@/app/(const)/noteMap";
-import { AudioEngine as audioEngine } from "@/app/classes/audioEngine";
+import { AudioEngine } from "@/app/classes/audioEngine";
 import { useIsKeyPressed } from "@/app/hooks/useKeyboardInput";
 import { cn } from "@/lib/utils";
-import { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 
 interface KeyProps extends React.ButtonHTMLAttributes<HTMLButtonElement>{
+    synthID: string;
     note: Note;
     isPressed?: boolean;
     showName?: boolean;
-    onPointerEnter?: () => void;
-    onPointerDown?: () => void;
+    useKeyboard?: boolean;
+    _onPointerEnter?: () => void;
+    _onPointerDown?: () => void;
 }
 
 export default function Key({ 
+    synthID,
     note, 
     showName, 
+    useKeyboard = true, //true default
     isPressed: externalIsPressed, 
-    onPointerDown, 
-    onPointerEnter, 
+    _onPointerDown, 
+    _onPointerEnter,
     className, 
     ...props 
 }: KeyProps) {
-    const isWhite = note.variant === "white";
+
+    const synthRef = useRef<AudioEngine | undefined>(undefined);
+    const synth = useSynthStore((state) => state.getSynthById(synthID));
+    
     const keyboardPressed = useIsKeyPressed(note.keyboardInput);
     const isPressed = externalIsPressed || keyboardPressed;
+
+    useEffect(() => {
+        if (!synth) return;
+        
+        synthRef.current = synth;
+
+        if(useKeyboard) {
+            if (keyboardPressed) {
+                synth.play(note.midiID);
+        } else {
+            synth.stop(note.midiID);
+        }
+    }
+    }, [keyboardPressed, synth, note.midiID]);
+
+    const isWhite = note.variant === "white";
 
     const whiteKeyHoverStyle: string = "hover:bg-synth-muted ";
     const whiteKeyClickStyle: string = "active:bg-piano-key-black-active ";
@@ -31,11 +55,11 @@ export default function Key({
     const blackKeyHoverStyle: string = "hover:bg-piano-key-black-hover ";
     const blackKeyClickStyle: string = "active:bg-piano-key-black-active ";
     
-    const keyAnimateProperties = (duration: number, type: "ease-in-out" | "transition-none") => {
-        return (
-            `${"transition duration-" + duration.toString() + " " + type}`
-        )
-    }
+    // const keyAnimateProperties = (duration: number, type: "ease-in-out" | "transition-none") => {
+    //     return (
+    //         `${"transition duration-" + duration.toString() + " " + type}`
+    //     )
+    // }
 
     const getKeyStyles = () => {
         
@@ -50,16 +74,24 @@ export default function Key({
             : blackKeyHoverStyle + blackKeyClickStyle + " bg-piano-key-black-default text-white";
     };
 
+    function handleKeyDown(){
+        if(isPressed) {
+            synth?.play(note.midiID);
+        }
+    }
+
     return (
         <button
             type="button"
             onPointerDown={() => {
-                audioEngine.getInstance()?.play(note.frequency);
-                onPointerDown?.();
+                synth?.play(note.midiID);
+                _onPointerDown?.();
             }}
-            onPointerUp={() => audioEngine.getInstance()?.stop(note.frequency)}
-            onPointerLeave={() => audioEngine.getInstance()?.stop(note.frequency)}
-            onPointerEnter={onPointerEnter}
+            onPointerUp={() => synth?.stop(note.midiID)}
+            onPointerLeave={() => synth?.stop(note.midiID)}
+            onPointerEnter={_onPointerEnter}
+
+            
             className={cn("h-full w-full select-none touch-none outline-none", getKeyStyles(), className)}
             {...props}
         >

@@ -1,38 +1,11 @@
-export enum PARAMETER_TYPE {
+import { masterClock } from "@/(utils)/clock";
+import { useTransportStore } from "@/(utils)/transportStore";
+import { PARAMETER_TYPE, PARAMETER_LABEL, ParameterObject } from "@/(utils)/synthParameterUtils";
+import { MidiNoteEvent } from "@/(utils)/midiEvents";
+import { midiToFreq } from "@/(utils)/midiHelpers";
+import { DistortionTool } from "./distortionTool";
 
-    Effect,
-    ADSR,
-    Other
-}
-
-export enum PARAMETER_LABEL {
-    Attack = "Attack", 
-    Decay = "Decay", 
-    Sustain = "Sustain", 
-    Release = "Release", 
-    ReverbWet = "Reverb Wet", 
-    DelayWet = "Delay Wet", 
-    DelayTime = "Delay Time", 
-    DistortionWet = "Distortion Wet", 
-    DistortionDrive = "Distortion Drive"
-}
-
-export interface ParameterTargetRef {
-    typeOfParameter: PARAMETER_TYPE;
-    target: PARAMETER_LABEL;
-}
-
-export interface parameterObject {
-    parameterName: string;
-    parameterTarget: ParameterTargetRef;
-    defaultValue: number;
-    minValue?: number;
-    maxValue?: number;
-    step: number;
-    unit: string;
-}
-
-export const synthParameters: parameterObject[] = [
+export const synthParameters: ParameterObject[] = [
     {
         parameterName: "Attack",
         parameterTarget: { 
@@ -144,7 +117,11 @@ export const synthParameters: parameterObject[] = [
 ];
 
 export class AudioEngine {
-    private ctx: AudioContext | null = null;
+    private id: string;
+    private unsubscribeFromClock: () => void;
+    private notes: MidiNoteEvent[] = [];        //store sequence if any
+    private scheduledIndices = new Set<number>(); //stops double notes
+
     private masterGain: GainNode | null = null;
     private dryGain: GainNode | null = null;
     private wetGain: GainNode | null = null;
@@ -160,7 +137,7 @@ export class AudioEngine {
     private activeNotes = new Map<number, { osc: OscillatorNode; gain: GainNode; count: number }>();
     private waveformType: OscillatorType = "sine";
 
-    public delayTime: number = 0.5; // Default delay time in seconds
+    public delayTime: number = 0.5;
     public wetGainPercent: number = 0.3;
     public reverbWetPercent: number = 0.5;
     public delayWetPercent: number = 0.4;
@@ -176,8 +153,6 @@ export class AudioEngine {
     };
 
     private convolverPath: string = "audio/impulses/reaper-irs/IRx1000_01B.wav";
-
-    static #instance: AudioEngine | null = null;
 
     private listeners = new Set<() => void>();
 
@@ -209,6 +184,38 @@ export class AudioEngine {
         };
     }
 
+    constructor(id: string, initialNotes: MidiNoteEvent[] = []) {
+        this.id = id;
+        this.notes = initialNotes;
+
+        // Change parameter name from lookaheadHorizon to tempo (or ignore it)
+        this.unsubscribeFromClock = masterClock.registerSynth((_, tempo) => {
+            this.scheduleNotes();
+        });
+
+        if (typeof window !== 'undefined') {
+            useTransportStore.subscribe((state, prevState) => {
+                if (prevState.isPlaying && !state.isPlaying) {
+                    this.stopAllVoices();
+                    this.scheduledIndices.clear();
+                }
+                
+                if (state.currentBeat < prevState.currentBeat || state.currentTime === 0) {
+                    this.scheduledIndices.clear();
+                }
+            });
+        }
+    }
+
+    public setNotes(notes: MidiNoteEvent[]) {
+        this.notes = notes;
+        this.scheduledIndices.clear();
+  }
+
+    public resetPlaybackState() {
+        this.scheduledIndices.clear();
+  }
+
     //protecting hyration and ssr
     public subscribe = (listener: () => void) => {
         this.listeners.add(listener);
@@ -216,7 +223,7 @@ export class AudioEngine {
     };
 
     private notifyListeners() {
-        this.updateSnapshot(); // Update cache reference before notifying React
+        this.updateSnapshot(); // Update cache reference before notifying
         this.listeners.forEach((listener) => listener());
     }
 
@@ -225,115 +232,109 @@ export class AudioEngine {
         return this.cachedSnapshot;
     };
 
-    constructor() {
-        if (AudioEngine.#instance) {
-            throw new Error("Use Singleton.getInstance() instead of 'new'.");
-        }
-        AudioEngine.#instance = this;
+    public getAudioContext(): AudioContext {
+        return masterClock.audioContext;
     }
 
-    static getInstance(): AudioEngine {
-        if (!AudioEngine.#instance) {
-            new AudioEngine();
-        }
-        return AudioEngine.#instance!;
-    }
+    private scheduleNotes() {
+        const transport = useTransportStore.getState();
+        const ctx = this.getAudioContext();
+        const secondsPerBeat = 60 / transport.bpm;
 
-    public async initContext() {
-        if (!this.ctx) {
-            const win = window as unknown as {
-                AudioContext?: typeof AudioContext;
-                webkitAudioContext?: typeof AudioContext;
-            };
-            const AudioCtx = win.AudioContext || win.webkitAudioContext;
-            if (AudioCtx) {
-                this.ctx = new AudioCtx();
+        const lookaheadWindow = 0.1;
+        const horizon = ctx.currentTime + lookaheadWindow;
+
+        this.notes.forEach((note, index) => {
+            if (this.scheduledIndices.has(index)) return;
+
+            const noteStartSec = note.beat * secondsPerBeat;
+            const exactHardwareTime = ctx.currentTime + (noteStartSec - transport.currentTime);
+
+            const tolerance = 0.05;
+
+            if (exactHardwareTime >= (ctx.currentTime - tolerance) && exactHardwareTime < horizon) {
+                const safeTriggerTime = Math.max(exactHardwareTime, ctx.currentTime);
+                const gateDurationSec = 0.8 * secondsPerBeat; 
+
+                this.play(note.midi, safeTriggerTime, gateDurationSec);
+                this.scheduledIndices.add(index);
+
+                console.log(`Successfully scheduled note index ${index} at beat ${note.beat} for time ${exactHardwareTime}`);
             }
-        }
+        });
+    }
 
-        if (this.ctx && !this.masterGain) {
+    public destroy() {
+        this.unsubscribeFromClock();
+    }
+
+
+    public async initSynth() {
+        const ctx = this.getAudioContext();
+
+        if (!this.masterGain) {
             // 1. Master Output Bus -> Destination
-            this.masterGain = this.ctx.createGain();
+            this.masterGain = ctx.createGain();
             this.masterGain.gain.value = this.envelopeSettings.gain;
-            this.masterGain.connect(this.ctx.destination);
+            this.masterGain.connect(ctx.destination);
 
             // 2. Dry Signal Path
-            this.dryGain = this.ctx.createGain();
+            this.dryGain = ctx.createGain();
             this.dryGain.gain.value = 1.0 - this.getSynthParameter(PARAMETER_LABEL.ReverbWet);
             this.dryGain.connect(this.masterGain);
 
             // 3. Wet Submix Bus
-            this.wetGain = this.ctx.createGain();
+            this.wetGain = ctx.createGain();
             this.wetGain.gain.value = this.getSynthParameter(PARAMETER_LABEL.ReverbWet);
             this.wetGain.connect(this.masterGain);
 
             // 4. Reverb Chain (Convolver -> ReverbGain -> WetBus)
-            this.convolverNode = this.ctx.createConvolver();
+            this.convolverNode = ctx.createConvolver();
             this.loadNewConvolverImpulse(this.convolverPath);
 
-            this.reverbGain = this.ctx.createGain();
+            this.reverbGain = ctx.createGain();
             this.reverbGain.gain.value = this.reverbWetPercent;
 
             this.convolverNode.connect(this.reverbGain);
             this.reverbGain.connect(this.wetGain);
 
             // 5. Delay Chain (Delay -> DelayGain -> WetBus)
-            this.delayNode = this.ctx.createDelay(5.0);
+            this.delayNode = ctx.createDelay(5.0);
             this.delayNode.delayTime.value = this.getSynthParameter(PARAMETER_LABEL.DelayTime);
 
-            this.delayGain = this.ctx.createGain();
+            this.delayGain = ctx.createGain();
             this.delayGain.gain.value = this.getSynthParameter(PARAMETER_LABEL.DelayWet);
 
             this.delayNode.connect(this.delayGain);
             this.delayGain.connect(this.wetGain);
 
-            this.distortNode = this.ctx.createWaveShaper();
-            this.distortNode.curve = this.createSoftDistortionCurve(this.getSynthParameter(PARAMETER_LABEL.DistortionDrive));
+            this.distortNode = ctx.createWaveShaper();
+            this.distortNode.curve = new DistortionTool().createSoftDistortionCurve(ctx, this.getSynthParameter(PARAMETER_LABEL.DistortionDrive));
             this.distortNode.oversample = "2x";
 
-            this.distortGain = this.ctx.createGain();
+            this.distortGain = ctx.createGain();
             this.distortGain.gain.value = this.getSynthParameter(PARAMETER_LABEL.DistortionWet);
 
             this.distortNode.connect(this.distortGain);
             this.distortGain.connect(this.wetGain);
             
         }
-
-        if (this.ctx && this.ctx.state === "suspended") {
-            await this.ctx.resume();
+        if (ctx.state === "suspended") {
+            await ctx.resume();
         }
     }
 
     public async loadNewConvolverImpulse(url: string) {
-        if (!this.ctx || !this.convolverNode) return;
+        const ctx = this.getAudioContext();
+        if (!ctx || !this.convolverNode) return;
         try {
             const response = await fetch(url);
             const arrBuffer = await response.arrayBuffer();
-            this.convolverNode.buffer = await this.ctx.decodeAudioData(arrBuffer);
+            this.convolverNode.buffer = await ctx.decodeAudioData(arrBuffer);
         } catch (error) {
             console.error("Failed to load/decode convolver impulse: ", error);
         }
     }
-
-    private createSoftDistortionCurve(driveAmount: number): Float32Array<ArrayBuffer> {
-            const distortionFactor = typeof driveAmount === "number" ? driveAmount : 50;
-            
-            const curveResolution = this.ctx?.sampleRate ?? 44100;
-            const distortionLookupTable = new Float32Array(curveResolution);
-            
-            const degreesToRadians = Math.PI / 180;
-
-            for (let sampleIndex = 0; sampleIndex < curveResolution; sampleIndex++) {
-                const inputSample = (sampleIndex * 2) / curveResolution - 1;
-                
-                const saturationNumerator = (3 + distortionFactor) * inputSample * 20 * degreesToRadians;
-                const saturationDenominator = Math.PI + distortionFactor * Math.abs(inputSample);
-                
-                distortionLookupTable[sampleIndex] = saturationNumerator / saturationDenominator;
-            }
-            
-            return distortionLookupTable;
-        }
 
     public getCurrentOscillatorWaveform(): OscillatorType {
         return this.waveformType;
@@ -360,6 +361,8 @@ export class AudioEngine {
     }
 
     public setSynthParameter(type: PARAMETER_LABEL, value: number) {
+        const ctx = this.getAudioContext();
+
         switch (type) {
             case PARAMETER_LABEL.Attack:
                 this.envelopeSettings.attack = value; break;
@@ -372,32 +375,32 @@ export class AudioEngine {
 
         case PARAMETER_LABEL.ReverbWet: 
             this.reverbWetPercent = value;
-            if (this.reverbGain && this.ctx) {
-                this.reverbGain.gain.setValueAtTime(value, this.ctx.currentTime);
+            if (this.reverbGain && ctx) {
+                this.reverbGain.gain.setValueAtTime(value, ctx.currentTime);
             }
             break;
         case PARAMETER_LABEL.DelayWet: 
             this.delayWetPercent = value; 
-            if (this.delayGain && this.ctx) {
-                this.delayGain.gain.setValueAtTime(value, this.ctx.currentTime);
+            if (this.delayGain && ctx) {
+                this.delayGain.gain.setValueAtTime(value, ctx.currentTime);
             }
             break;
         case PARAMETER_LABEL.DelayTime: 
             this.delayTime = value; 
-            if (this.delayNode && this.ctx) {
-                this.delayNode.delayTime.setValueAtTime(value, this.ctx.currentTime);
+            if (this.delayNode && ctx) {
+                this.delayNode.delayTime.setValueAtTime(value, ctx.currentTime);
             }
             break;
         case PARAMETER_LABEL.DistortionWet: 
             this.distortWetPercentage = value; 
-            if (this.distortGain && this.ctx) {
-                this.distortGain.gain.setValueAtTime(value, this.ctx.currentTime);
+            if (this.distortGain && ctx) {
+                this.distortGain.gain.setValueAtTime(value, ctx.currentTime);
             }
             break;
         case PARAMETER_LABEL.DistortionDrive: 
             this.distortionDriveAmount = value; 
-            if (this.distortNode && this.ctx) {
-                this.distortNode.curve = this.createSoftDistortionCurve(value);
+            if (this.distortNode && ctx) {
+                this.distortNode.curve = new DistortionTool().createSoftDistortionCurve(ctx, value);
             }
             break;
             default: return 0;
@@ -406,22 +409,42 @@ export class AudioEngine {
         this.notifyListeners();
     }
 
-    public play(frequency: number) {
-        if (!this.ctx) {
-            this.initContext().then(() => this.play(frequency));
+    public play(midi: number, time?: number, duration?: number) {
+        const ctx = this.getAudioContext();
+        if (!ctx) {
+            console.warn("NO AUDIO CONTEXT AVAILABLE BEFORE PLAYING NOTE");
             return;
         }
 
-        const entry = this.activeNotes.get(frequency);
-        if (entry) {
-            entry.count++;
-            return;
+        const existingEntry = this.activeNotes.get(midi);
+        if (existingEntry) {
+            try {
+                const now = ctx.currentTime;
+                existingEntry.gain.gain.cancelScheduledValues(now);
+                existingEntry.gain.gain.setValueAtTime(existingEntry.gain.gain.value, now);
+                existingEntry.gain.gain.linearRampToValueAtTime(0.0001, now + 0.01); 
+                existingEntry.osc.stop(now + 0.02);
+                existingEntry.osc.disconnect();
+                existingEntry.gain.disconnect();
+            } catch (_) {
+                // ignore if already disconnected
+            }
+            this.activeNotes.delete(midi);
         }
+        
+        const osc = ctx.createOscillator();
+        const noteGain = ctx.createGain();
 
-        const osc = this.ctx.createOscillator();
-        const noteGain = this.ctx.createGain();
+        const noteTimeToTrigger = time ? time : ctx.currentTime;
 
-        osc.frequency.setValueAtTime(frequency, this.ctx.currentTime);
+        const attackDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Attack), 0.001);
+        const decayDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Decay), 0.001);
+        const targetSustain = Math.max(this.getSynthParameter(PARAMETER_LABEL.Sustain), 0.001);
+
+        const peakTime = noteTimeToTrigger + attackDuration;
+        const sustainTime = peakTime + decayDuration;
+
+        osc.frequency.setValueAtTime(midiToFreq(midi), noteTimeToTrigger);
         osc.type = this.waveformType;
 
         osc.connect(noteGain);
@@ -431,50 +454,68 @@ export class AudioEngine {
         if (this.delayNode) noteGain.connect(this.delayNode);
         if (this.distortNode) noteGain.connect(this.distortNode);
 
-        const now = this.ctx.currentTime;
-        const attackDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Attack), 0.001);
-        const decayDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Decay), 0.001);
-        const targetSustain = Math.max(this.getSynthParameter(PARAMETER_LABEL.Sustain), 0.001);
-
-        const peakTime = now + attackDuration;
-        const sustainTime = peakTime + decayDuration;
-
-        noteGain.gain.setValueAtTime(0.0001, now);
-        noteGain.gain.linearRampToValueAtTime(1.0, peakTime ? peakTime : 0.001);
+        // ADSR Envelope
+        noteGain.gain.cancelScheduledValues(noteTimeToTrigger);
+        noteGain.gain.setValueAtTime(0.0001, noteTimeToTrigger);
+        noteGain.gain.linearRampToValueAtTime(1.0, peakTime);
         noteGain.gain.linearRampToValueAtTime(targetSustain, sustainTime);
 
-        osc.start(now);
+        osc.start(noteTimeToTrigger);
 
-        this.activeNotes.set(frequency, { osc, gain: noteGain, count: 1 });
+        // store active voice instance
+        this.activeNotes.set(midi, { osc, gain: noteGain, count: 1 });
+
+        if (duration) {
+            this.stop(midi, duration);
+        }
     }
 
-    public stop(frequency: number) {
-        const entry = this.activeNotes.get(frequency);
+    public stop(midi: number, duration?: number) {
+        const ctx = this.getAudioContext();
+        const entry = this.activeNotes.get(midi);
         if (!entry) return;
 
-        entry.count--;
+        const { osc, gain } = entry;
+        const now = ctx.currentTime;
+        const releaseDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Release), 0.001);
+        const stopTime = (duration ? duration + now : now);
+        const releaseTime = stopTime + releaseDuration;
 
-        if (entry.count <= 0 && this.ctx) {
-            const { osc, gain } = entry;
-            const now = this.ctx.currentTime;
-
+        try {
             gain.gain.cancelScheduledValues(now);
-            gain.gain.setValueAtTime(Math.max(gain.gain.value, 0.0001), now);
-
-            const releaseDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Release), 0.001);
-            const releaseTime = now + releaseDuration;
-            
+            gain.gain.setValueAtTime(Math.max(gain.gain.value, 0.0001), stopTime);
             gain.gain.exponentialRampToValueAtTime(0.0001, releaseTime);
 
             osc.stop(releaseTime + 0.05);
-            this.activeNotes.delete(frequency);
+            this.activeNotes.delete(midi);
 
             osc.onended = () => {
                 osc.disconnect();
                 gain.disconnect();
             };
+        } catch (_) {
+            // safety catch for already stopped nodes
         }
     }
-}
 
-export const audioEngine = AudioEngine.getInstance();
+    public stopAllVoices() {
+        const now = this.getAudioContext().currentTime;
+
+        // Iterate through all active voices currently playing
+        this.activeNotes.forEach((note) => {
+            try {
+                // Mute gain instantly to prevent clicks/pops
+                note.gain.gain.cancelScheduledValues(now);
+                note.gain.gain.setValueAtTime(0.0001, now);
+
+                note.osc.stop(now);
+                note.osc.disconnect();
+                note.gain.disconnect();
+            } catch (_) {
+                // ignore errors
+            }
+        });
+
+        this.activeNotes.clear();
+    }
+}
