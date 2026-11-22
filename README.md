@@ -200,8 +200,8 @@ The scheduled-index set is cleared when the transport loops or stops, so each pa
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/krsnelgrove-del/<repo-name>.git
-cd <repo-name>
+git clone https://github.com/krsnelgrove-del/synthesizer-project.git
+cd synthesizer-project
 
 # 2. Install dependencies
 pnpm install
