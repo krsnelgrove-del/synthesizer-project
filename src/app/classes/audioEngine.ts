@@ -185,13 +185,27 @@ export class AudioEngine {
     }
 
     constructor(id: string, initialNotes: MidiNoteEvent[] = []) {
-    this.id = id;
+        this.id = id;
         this.notes = initialNotes;
-        this.unsubscribeFromClock = masterClock.registerSynth((_, lookaheadHorizon) => {
-            this.scheduleNotes(lookaheadHorizon);
 
-    });
-  }
+        // Change parameter name from lookaheadHorizon to tempo (or ignore it)
+        this.unsubscribeFromClock = masterClock.registerSynth((_, tempo) => {
+            this.scheduleNotes();
+        });
+
+        if (typeof window !== 'undefined') {
+            useTransportStore.subscribe((state, prevState) => {
+                if (prevState.isPlaying && !state.isPlaying) {
+                    this.stopAllVoices();
+                    this.scheduledIndices.clear();
+                }
+                
+                if (state.currentBeat < prevState.currentBeat || state.currentTime === 0) {
+                    this.scheduledIndices.clear();
+                }
+            });
+        }
+    }
 
     public setNotes(notes: MidiNoteEvent[]) {
         this.notes = notes;
@@ -222,26 +236,31 @@ export class AudioEngine {
         return masterClock.audioContext;
     }
 
-    private scheduleNotes(
-        lookaheadHorizon: number
-    ) {
+    private scheduleNotes() {
         const transport = useTransportStore.getState();
         const ctx = this.getAudioContext();
         const secondsPerBeat = 60 / transport.bpm;
 
-        //Loop through the plugin's note sequence 
+        const lookaheadWindow = 0.1;
+        const horizon = ctx.currentTime + lookaheadWindow;
+
         this.notes.forEach((note, index) => {
-        if (this.scheduledIndices.has(index)) return;
+            if (this.scheduledIndices.has(index)) return;
 
-        const noteStartSec = note.startBeat * secondsPerBeat;
-        const exactHardwareTime =
-            ctx.currentTime + (noteStartSec - transport.currentTime);
+            const noteStartSec = note.beat * secondsPerBeat;
+            const exactHardwareTime = ctx.currentTime + (noteStartSec - transport.currentTime);
 
-        if (exactHardwareTime >= ctx.currentTime && exactHardwareTime < lookaheadHorizon) {
-            const durationSec = note.endBeat * secondsPerBeat;
-            this.play(note.midi, exactHardwareTime, durationSec);
-            this.scheduledIndices.add(index); 
-        }
+            const tolerance = 0.05;
+
+            if (exactHardwareTime >= (ctx.currentTime - tolerance) && exactHardwareTime < horizon) {
+                const safeTriggerTime = Math.max(exactHardwareTime, ctx.currentTime);
+                const gateDurationSec = 0.8 * secondsPerBeat; 
+
+                this.play(note.midi, safeTriggerTime, gateDurationSec);
+                this.scheduledIndices.add(index);
+
+                console.log(`Successfully scheduled note index ${index} at beat ${note.beat} for time ${exactHardwareTime}`);
+            }
         });
     }
 
@@ -390,24 +409,33 @@ export class AudioEngine {
         this.notifyListeners();
     }
 
-    public play(midi: number, time?: number, duration? : number) {
+    public play(midi: number, time?: number, duration?: number) {
         const ctx = this.getAudioContext();
         if (!ctx) {
-            console.warn("NO AUDIO CONTEXT AVAILABLE BEFORE PLAYING NOTE; AUDIO CONTEXT OBJECT: ", ctx);
+            console.warn("NO AUDIO CONTEXT AVAILABLE BEFORE PLAYING NOTE");
             return;
         }
 
-        const entry = this.activeNotes.get(midiToFreq(midi));
-        if (entry) {
-            entry.count++;
-            return;
+        const existingEntry = this.activeNotes.get(midi);
+        if (existingEntry) {
+            try {
+                const now = ctx.currentTime;
+                existingEntry.gain.gain.cancelScheduledValues(now);
+                existingEntry.gain.gain.setValueAtTime(existingEntry.gain.gain.value, now);
+                existingEntry.gain.gain.linearRampToValueAtTime(0.0001, now + 0.01); 
+                existingEntry.osc.stop(now + 0.02);
+                existingEntry.osc.disconnect();
+                existingEntry.gain.disconnect();
+            } catch (_) {
+                // ignore if already disconnected
+            }
+            this.activeNotes.delete(midi);
         }
         
         const osc = ctx.createOscillator();
         const noteGain = ctx.createGain();
 
         const noteTimeToTrigger = time ? time : ctx.currentTime;
-        const noteDurationTime = duration ? duration : 0;
 
         const attackDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Attack), 0.001);
         const decayDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Decay), 0.001);
@@ -426,47 +454,68 @@ export class AudioEngine {
         if (this.delayNode) noteGain.connect(this.delayNode);
         if (this.distortNode) noteGain.connect(this.distortNode);
 
-
-
+        // ADSR Envelope
+        noteGain.gain.cancelScheduledValues(noteTimeToTrigger);
         noteGain.gain.setValueAtTime(0.0001, noteTimeToTrigger);
-        noteGain.gain.linearRampToValueAtTime(1.0, peakTime ? peakTime : 0.001);
+        noteGain.gain.linearRampToValueAtTime(1.0, peakTime);
         noteGain.gain.linearRampToValueAtTime(targetSustain, sustainTime);
 
         osc.start(noteTimeToTrigger);
 
+        // store active voice instance
         this.activeNotes.set(midi, { osc, gain: noteGain, count: 1 });
 
-        if(time || duration) {
+        if (duration) {
             this.stop(midi, duration);
+        }
     }
-}
 
     public stop(midi: number, duration?: number) {
         const ctx = this.getAudioContext();
         const entry = this.activeNotes.get(midi);
         if (!entry) return;
 
-        entry.count--;
+        const { osc, gain } = entry;
+        const now = ctx.currentTime;
+        const releaseDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Release), 0.001);
+        const stopTime = (duration ? duration + now : now);
+        const releaseTime = stopTime + releaseDuration;
 
-        if (entry.count <= 0 && ctx) {
-            const { osc, gain } = entry;
-            const now = ctx.currentTime;
-
+        try {
             gain.gain.cancelScheduledValues(now);
-            gain.gain.setValueAtTime(Math.max(gain.gain.value, 0.0001), duration ? duration : now);
+            gain.gain.setValueAtTime(Math.max(gain.gain.value, 0.0001), stopTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, releaseTime);
 
-            const releaseDuration = Math.max(this.getSynthParameter(PARAMETER_LABEL.Release), 0.001);
-            const releaseTime = now + releaseDuration;
-            
-            gain.gain.exponentialRampToValueAtTime(0.0001, duration ? duration + releaseTime : releaseTime);
-
-            osc.stop((duration ? duration + releaseTime : releaseTime) + 0.05);
+            osc.stop(releaseTime + 0.05);
             this.activeNotes.delete(midi);
 
             osc.onended = () => {
                 osc.disconnect();
                 gain.disconnect();
             };
+        } catch (_) {
+            // safety catch for already stopped nodes
         }
+    }
+
+    public stopAllVoices() {
+        const now = this.getAudioContext().currentTime;
+
+        // Iterate through all active voices currently playing
+        this.activeNotes.forEach((note) => {
+            try {
+                // Mute gain instantly to prevent clicks/pops
+                note.gain.gain.cancelScheduledValues(now);
+                note.gain.gain.setValueAtTime(0.0001, now);
+
+                note.osc.stop(now);
+                note.osc.disconnect();
+                note.gain.disconnect();
+            } catch (_) {
+                // ignore errors
+            }
+        });
+
+        this.activeNotes.clear();
     }
 }

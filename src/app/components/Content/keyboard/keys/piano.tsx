@@ -23,7 +23,6 @@ export default function Piano({ synthID, variant, isVertical, midiOffset = 0, nu
         return isVertical ? base.reverse() : base;
     })();
 
-    // 2. Calculate white key percentage based strictly on the active subset
     const totalWhiteKeys = noteMap.filter(n => n.variant === "white").length;
     const whiteKeySizePercent = totalWhiteKeys > 0 ? 100 / totalWhiteKeys : 0;
 
@@ -84,7 +83,7 @@ export default function Piano({ synthID, variant, isVertical, midiOffset = 0, nu
                             : { 
                                 left: `${offsetPosition}%`, 
                                 width: `${blackKeySizePercent}%`, 
-                                height: '60%' 
+                                height: '100%'
                               };
 
                         return (

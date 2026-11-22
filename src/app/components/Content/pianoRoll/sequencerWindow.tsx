@@ -1,104 +1,87 @@
-import { Note, Notes } from "@/app/(const)/noteMap";
+import { Notes } from "@/app/(const)/noteMap";
 import { SequencerCell } from "./sequencerCell";
 import Key from "../keyboard/keys/key";
+import { useTransportStore } from "@/(utils)/transportStore";
+
+function TimeStampsRow({ gridColumns }: { gridColumns: number }) {
+    const currentBeat = useTransportStore((state) => state.currentBeat);
+    const activeStepCol = Math.floor(currentBeat) % 16;
+
+    return (
+        <>
+            {Array.from({ length: gridColumns + 1 }).map((_, i) => {
+                const labelString = i > 0 ? i.toString() : "";
+                const startLine = i === 0 ? 1 : i + 1;
+                const endLine = i === 1 ? 2 : i + 2;
+                const isPlayheadActive = i > 0 && activeStepCol === (i - 1);
+
+                const transportHeadStyle = 
+                    "sticky top-0 bg-synth-app z-30 border-b-2 border-b-black/10 flex items-center justify-start text-xs text-synth-text pl-2 relative " + 
+                    (isPlayheadActive ? "border-l border-l-synth-violet bg-synth-muted/20" : "border-l border-l-synth-muted/50");
+
+                return (
+                    <div 
+                        key={i}
+                        style={{ gridRowStart: 1, gridColumnStart: startLine, gridColumnEnd: endLine }}
+                        className={transportHeadStyle}
+                    >
+                        <span>{labelString}</span> 
+                        {isPlayheadActive && (
+                            <div className="absolute -bottom-1.5 left-0 -translate-x-1/2 w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-synth-violet z-40 pointer-events-none" />
+                        )}
+                    </div>
+                );
+            })}
+        </>
+    );
+}
 
 export default function SequencerWindow() {
-    const columns = 17; 
-    const rows = Notes.length;
+    const synthID = "000";
+    const maxBeats = useTransportStore((state) => state.amountOfBeats);
+    const gridRows = Notes.length;
+    const gridColumns = maxBeats;
 
-    const wrapperGridStyleString = "overflow-auto w-full h-full border-4 border-synth-border bg-synth-app "
-    + "grid grid-rows-" + (rows).toString() + " grid-cols-" + (columns).toString();
+    const wrapperClassnameString = "overflow-auto w-full h-full border-4 border-synth-border bg-synth-app grid";
 
-    function RenderHeadTimeStamps() {
-        const divElements = [];
+    const wrapperGridStyle = {
+        gridTemplateColumns: `minmax(0, 100px) repeat(${gridColumns}, 1fr)`
+    };
 
-        for (let i = 0; i < columns; i++) {
-            const labelString = i > 0 ? i.toString() : "";
-            const startLine = i === 0 ? 1 : i + 1;
-            const endLine = i === 1 ? 2 : i + 2;
+    const noteMap = [...Notes].reverse();
 
-            divElements.push(
+    return (
+        <div className={wrapperClassnameString} style={wrapperGridStyle}>
+            {/* Timestamps header */}
+            <TimeStampsRow gridColumns={gridColumns} />
+
+            {/* Piano Roll Sidebar */}
+            {noteMap.map((note, r) => (
                 <div 
-                    key={i}
-                    style={{ 
-                        gridRowStart: 1, 
-                        gridColumnStart: startLine, 
-                        gridColumnEnd: endLine 
-                    }}
-                    className="sticky top-0 border-r border-r-synth-muted/65 border-b-2 border-b-black/10 flex items-center justify-start text-xs text-synth-text pl-2"
+                    key={`piano-key-${r}`} 
+                    className={`min-h-0 col-start-1 col-end-2 row-start-${r + 2} row-end-${r + 3}`}
                 >
-                    <span>{labelString}</span> 
+                    <Key synthID={synthID} note={note} useKeyboard={false} />
                 </div>
-            );
-        }
+            ))}
 
-        return divElements;
-    }
-
-    function RenderCells() {
-        const divElements = [];
-
-        for (let c = 1; c < columns; c++) {
-            for (let r = 0; r < rows; r++) {
-                const startRow = 2 + r;
-                const endRow = 3 + r;
-                const startCol = 1 + c;
-                const endCol = 2 + c;
-
-                divElements.push(
+            {/* Sequencer Cells Grid */}
+            {Array.from({ length: gridColumns + 1 }).map((_, colIndex) => {
+                const c = colIndex + 1;
+                return Notes.map((_, r) => (
                     <SequencerCell
                         key={`cell-${c}-${r}`}
                         isStepNode={true}
-                        startRow={startRow}
-                        endRow={endRow}
-                        startCol={startCol}
-                        endCol={endCol} 
-                        />
-                );
-            }
-        }
-
-        return divElements;
-    }
-    
-    function renderPianoRollSidebar(midiOffset: number) {
-        const elements = [];
-        const noteMap = (() => {
-                let base = [...Notes];
-                if (rows <= base.length) {
-                    base = base.slice(0, rows);
-                }
-                return base;
-            })();
-
-        const totalWhiteKeys = noteMap.filter(n => n.variant === "white").length;
-        // const whiteKeySizePercent = totalWhiteKeys > 0 ? 100 / totalWhiteKeys : 0;
-        // const whiteKeyCounter = 0;
-
-        for(let r = 1; r <= rows; r++) {
-            const styleString = "min-h-0 col-start-1 col-end-2 row-start-" + (r+1).toString() + " row-end-" + (r+2).toString();
-            const note: Note = noteMap.toReversed()[r-1];
-            console.log("Note In Sequencer Window Instantiated: " + note.midiID);
-            elements.push(
-                <div key={r} className={styleString}>
-                    <Key 
-                    synthID="000"
-                    note={note}
+                        col={c}
+                        row={r}
+                        synthID={synthID}
+                        startRow={2 + r}
+                        endRow={3 + r}
+                        startCol={1 + c}
+                        endCol={2 + c}
                     />
-                </div>
-            )
-        }
-
-        return elements;
-    }
-
-    return (
-        <div className={wrapperGridStyleString} >
-            {RenderHeadTimeStamps()}
-
-            {renderPianoRollSidebar(0)}
-
-            {RenderCells()}
+                ));
+            })}
         </div>
     );
 }

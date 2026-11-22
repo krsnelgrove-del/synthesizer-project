@@ -1,26 +1,21 @@
-// (utils)/clock.ts
+import { useTransportStore } from "./transportStore";
 
-// Type definition for synth tick callback
 type SynthTickCallback = (currentTime: number, tempo: number) => void;
 
 export class MasterClock {
   private _audioContext: AudioContext | null = null;
-  private timerId: number | null = null;
+  private animationFrameId: number | null = null;
   private isRunning: boolean = false;
-  private tempo: number = 120; // Default BPM
+  private tempo: number = 120;
   private callbacks: Set<SynthTickCallback> = new Set();
+  private startTime: number = 0;
+  private pausedAt: number = 0;
 
-  constructor() {
-    // Leave constructor clean to prevent SSR module-evaluation crashes
-  }
-
-  // Safe getter property: instantiates AudioContext lazily only when first accessed on the client side
   public get audioContext(): AudioContext {
     if (!this._audioContext) {
       if (typeof window === 'undefined') {
         throw new Error("AudioContext cannot be initialized on the server side.");
       }
-
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this._audioContext = new AudioCtx();
     }
@@ -38,36 +33,62 @@ export class MasterClock {
 
   public start() {
     if (this.isRunning) return;
+
+    if (this._audioContext && this._audioContext.state === "suspended") {
+      this._audioContext.resume();
+    }
+
     this.isRunning = true;
 
-    // Convert BPM to interval (16th notes or tick rate)
-    // 60 seconds / BPM / 4 (for 16th notes) * 1000ms
-    const intervalMs = (60 / this.tempo / 4) * 1000;
-
-    let lastTime = performance.now();
+    //anchor start time using high-res performance timer
+    this.startTime = performance.now() / 1000 - this.pausedAt;
 
     const tick = () => {
       if (!this.isRunning) return;
 
-      const currentTime = this.audioContext.currentTime;
-      
-      // Notify all registered synths/components
-      this.callbacks.forEach((cb) => cb(currentTime, this.tempo));
+      const now = performance.now() / 1000;
+      let elapsedSeconds = now - this.startTime;
 
-      lastTime = performance.now();
-      this.timerId = window.setTimeout(tick, intervalMs);
+      const { bpm, amountOfBeats } = useTransportStore.getState();
+      
+      // Calculate loop limits (4 beats per bar)
+      const beatsPerSecond = bpm / 60;
+      const loopDurationSeconds = amountOfBeats / beatsPerSecond;
+
+      //reset
+      if (elapsedSeconds >= loopDurationSeconds) {
+        this.startTime += loopDurationSeconds;
+        elapsedSeconds = now - this.startTime;
+
+      }
+
+      useTransportStore.getState().updateTransportTime(elapsedSeconds);
+
+      const audioTime = this._audioContext ? this._audioContext.currentTime : elapsedSeconds;
+      this.callbacks.forEach((callback) => callback(audioTime, this.tempo));
+
+      this.animationFrameId = requestAnimationFrame(tick);
     };
 
-    this.timerId = window.setTimeout(tick, intervalMs);
+    this.animationFrameId = requestAnimationFrame(tick);
   }
 
   public stop() {
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
     if (!this.isRunning) return;
     this.isRunning = false;
-    if (this.timerId !== null) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
-    }
+
+    const state = useTransportStore.getState();
+    this.pausedAt = state.currentTime;
+  }
+
+  public reset() {
+    this.stop();
+    this.pausedAt = 0;
   }
 
   public setTempo(newTempo: number) {

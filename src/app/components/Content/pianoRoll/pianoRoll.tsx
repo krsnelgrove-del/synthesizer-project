@@ -1,4 +1,3 @@
-import { MenuSquare } from "lucide-react";
 import PianoRollHeader from "./pianoRollHeader";
 import PianoRollContent from "./pianoRollContent";
 import CardTitleBar from "../../textFields/cardTitleBar";

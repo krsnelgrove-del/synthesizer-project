@@ -19,7 +19,7 @@ export const useSynthStore = create<SynthStoreState>((set, get) => ({
       const existing = get().synths [id];
         if (existing) {
             console.warn(`Synth with ID "${id}" already exists. Skipping init.`);
-            console.log("Synths initialized: ", get().synths);
+            // console.log("Synths initialized: ", get().synths);
             return;
         }
 

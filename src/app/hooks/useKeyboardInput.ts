@@ -1,14 +1,12 @@
-//hook to allow use of keyboard subscription
-
 import { useEffect, useSyncExternalStore } from "react";
 import { Notes } from "@/app/(const)/noteMap";
 
-
 const keyMap = new Map<string, number>();
-const pressedKeys = new Set<string>();
+let pressedKeys = new Set<string>(); // Keep as tracked reference
 const listeners = new Set<() => void>();
 
 function notifyListeners() {
+    pressedKeys = new Set(pressedKeys);
     listeners.forEach((listener) => listener());
 }
 
@@ -19,58 +17,58 @@ export function subscribeToKeyboard(listener: () => void) {
     };
 }
 
-export function isKeyPressed(key: string): boolean {
-    if (!key)
-        {
-            return false;
-        }
-
-        const val = pressedKeys.has(key.toLowerCase());
-    return val;
-    
+export function getSnapshot(): Set<string> {
+    return pressedKeys;
 }
 
 export function useIsKeyPressed(key: string | undefined): boolean {
     return useSyncExternalStore(
         subscribeToKeyboard,
-        () => key !== undefined && isKeyPressed(key),
+        () => {
+            if (!key) return false;
+            return pressedKeys.has(key.toLowerCase());
+        },
         () => false
     );
 }
 
 export function useKeyboardInput() {
     useEffect(() => {
-        Notes.forEach((note) => {
-            if (note.keyboardInput) {
-                keyMap.set(note.keyboardInput.toLowerCase(), note.midiID);
-            }
-        });
+        if (keyMap.size === 0) {
+            Notes.forEach((note) => {
+                if (note.keyboardInput) {
+                    keyMap.set(note.keyboardInput.toLowerCase(), note.midiID);
+                }
+            });
+        }
 
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.repeat) return;
             if (["INPUT", "TEXTAREA"].includes((event.target as HTMLElement).tagName)) return;
+            if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
 
             const inputKey = event.key.toLowerCase();
             const midiNote = keyMap.get(inputKey);
 
-            if (midiNote && !pressedKeys.has(inputKey)) {
+            if (midiNote !== undefined && !pressedKeys.has(inputKey)) {
                 pressedKeys.add(inputKey);
                 notifyListeners();
             }
         };
 
         const handleKeyUp = (event: KeyboardEvent) => {
-            const key = event.key.toLowerCase();
-            const frequency = keyMap.get(key);
+            const inputKey = event.key.toLowerCase();
+            const midiNote = keyMap.get(inputKey);
 
-            if (frequency && pressedKeys.has(key)) {
-                pressedKeys.delete(key);
+            if (midiNote !== undefined && pressedKeys.has(inputKey)) {
+                pressedKeys.delete(inputKey);
                 notifyListeners();
             }
         };
 
         window.addEventListener("keydown", handleKeyDown);
         window.addEventListener("keyup", handleKeyUp);
+
 
         return () => {
             window.removeEventListener("keydown", handleKeyDown);

@@ -26,17 +26,16 @@ export default function Keyboard({synthID}: KeyboardProps) {
                     <RollWheel/>
                 </Container>
                 
-                {/* Keys Container (MUST be relative to anchor absolute children) */}
                 <Container as="div" variant="default" className="w-full h-full relative overflow-hidden">
                     
-                    {/* 1. White Keys (Absolute background layer) */}
+                    {/* White Keys (Absolute background layer) */}
                     <Piano
                         synthID={synthID}
                         variant="white" 
                         className="absolute inset-0 w-full h-full"
                     />
 
-                    {/* 2. Black Keys (Absolute top overlay layer spanning top 65%) */}
+                    {/* Black Keys (Absolute top overlay layer) */}
                     <div className="absolute top-0 left-0 h-[65%] w-full pointer-events-none z-20">
                         <Piano
                             synthID={synthID}

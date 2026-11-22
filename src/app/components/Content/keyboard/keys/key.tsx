@@ -10,6 +10,7 @@ interface KeyProps extends React.ButtonHTMLAttributes<HTMLButtonElement>{
     note: Note;
     isPressed?: boolean;
     showName?: boolean;
+    useKeyboard?: boolean;
     _onPointerEnter?: () => void;
     _onPointerDown?: () => void;
 }
@@ -18,6 +19,7 @@ export default function Key({
     synthID,
     note, 
     showName, 
+    useKeyboard = true, //true default
     isPressed: externalIsPressed, 
     _onPointerDown, 
     _onPointerEnter,
@@ -27,21 +29,22 @@ export default function Key({
 
     const synthRef = useRef<AudioEngine | undefined>(undefined);
     const synth = useSynthStore((state) => state.getSynthById(synthID));
+    
     const keyboardPressed = useIsKeyPressed(note.keyboardInput);
     const isPressed = externalIsPressed || keyboardPressed;
 
     useEffect(() => {
-        synthRef.current = synth;
-    }, [synth]);
-
-    useEffect(() => {
         if (!synth) return;
+        
+        synthRef.current = synth;
 
-        if (keyboardPressed) {
-            synth.play(note.midiID);
+        if(useKeyboard) {
+            if (keyboardPressed) {
+                synth.play(note.midiID);
         } else {
             synth.stop(note.midiID);
         }
+    }
     }, [keyboardPressed, synth, note.midiID]);
 
     const isWhite = note.variant === "white";
